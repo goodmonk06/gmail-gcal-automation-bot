@@ -5,6 +5,9 @@ import { AppDatabase } from './db/database';
 import { RuleEngine } from './rules/ruleEngine';
 import { GmailWatcher } from './services/gmailWatcher';
 import { CalendarService } from './services/calendarService';
+import { createRulesRouter } from './api/rules.router';
+import { createLogsRouter } from './api/logs.router';
+import { errorHandler, successResponse } from './api/middleware';
 
 const app = express();
 app.use(express.json());
@@ -156,12 +159,21 @@ app.get('/', (req, res) => {
 
   <div class="section">
     <h2>API Endpoints</h2>
+    <h3>REST API</h3>
+    <ul>
+      <li><code>GET /api/rules</code> - List all rules</li>
+      <li><code>GET /api/rules/:id</code> - Get rule by ID</li>
+      <li><code>POST /api/rules</code> - Create new rule</li>
+      <li><code>PATCH /api/rules/:id</code> - Update rule</li>
+      <li><code>DELETE /api/rules/:id</code> - Delete rule</li>
+      <li><code>GET /api/logs/rules/:ruleId</code> - Get execution logs for a rule</li>
+      <li><code>GET /api/logs/recent</code> - Get recent execution logs</li>
+    </ul>
+    <h3>OAuth & Execution</h3>
     <ul>
       <li><code>GET /auth</code> - Start OAuth authentication</li>
       <li><code>GET /oauth2callback</code> - OAuth callback</li>
       <li><code>POST /trigger</code> - Manually trigger all rules</li>
-      <li><code>GET /rules</code> - List all active rules (JSON)</li>
-      <li><code>GET /logs/:ruleId</code> - Get execution logs for a rule (JSON)</li>
     </ul>
   </div>
 </body>
@@ -170,6 +182,10 @@ app.get('/', (req, res) => {
 
   res.send(html);
 });
+
+// API Routes
+app.use('/api/rules', createRulesRouter(db));
+app.use('/api/logs', createLogsRouter(db));
 
 // OAuth - Start authentication
 app.get('/auth', (req, res) => {
@@ -199,20 +215,9 @@ app.get('/oauth2callback', async (req, res) => {
   }
 });
 
-// API: List all active rules
-app.get('/rules', (req, res) => {
-  const rules = db.getAllActiveRules();
-  res.json(rules);
-});
-
-// API: Get execution logs for a rule
-app.get('/logs/:ruleId', (req, res) => {
-  const ruleId = parseInt(req.params.ruleId, 10);
-  const limit = parseInt(req.query.limit as string || '100', 10);
-
-  const logs = db.getExecutionLogsByRule(ruleId, limit);
-  res.json(logs);
-});
+// Legacy endpoints for backward compatibility (redirect to new API)
+app.get('/rules', (req, res) => res.redirect('/api/rules?active=true'));
+app.get('/logs/:ruleId', (req, res) => res.redirect(`/api/logs/rules/${req.params.ruleId}`));
 
 // API: Manually trigger all rules
 app.post('/trigger', async (req, res) => {
@@ -234,12 +239,15 @@ app.post('/trigger', async (req, res) => {
       results,
     };
 
-    res.json(summary);
+    res.json(successResponse(summary));
   } catch (error) {
     console.error('Error triggering rules:', error);
-    res.status(500).json({ error: 'Failed to execute rules' });
+    res.status(500).json({ success: false, error: { message: 'Failed to execute rules' } });
   }
 });
+
+// Error handler (must be last)
+app.use(errorHandler);
 
 // Start server
 const PORT = config.server.port;

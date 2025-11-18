@@ -1,29 +1,72 @@
-# gmail-gcal-automation-bot
+# Gmail-Calendar Automation Bot
 
-GmailとGoogleカレンダーを監視し、件名ルールやラベルに応じて自動予定作成・リマインドを行うボット。
+GmailとGoogleカレンダーを自動連携し、ルールベースでメールからカレンダー予定を作成するボットシステム。
 
-## 📋 概要
+## 📋 Overview
 
-このボットは、Gmailの特定のメール（ラベルや件名パターン）を検知し、自動的にGoogleカレンダーの予定を作成します。
+このボットは、Gmail APIとGoogle Calendar APIを活用し、特定のメール（ラベル、件名パターンなど）を検知して、自動的にGoogleカレンダーの予定を作成します。ルールエンジンとテンプレートシステムにより、柔軟な自動化フローを構築できます。
 
 **主な機能:**
-- Gmailのクエリ（ラベル、件名など）に基づいたメール検出
+- ルールベースのメール検出（Gmailクエリ構文をサポート）
 - カレンダー予定の自動作成
-- 柔軟なルールエンジン（データベースで管理）
-- 本文からの日時パース、または固定時間後の予定作成
-- 定期実行（cron）とWebダッシュボードの両方に対応
+- 3種類の時間戦略（本文解析、固定遅延、固定日時）
+- REST API による完全な Rule CRUD操作
+- Webダッシュボードでのルール管理とトリガー
+- 定期実行（cron）とWebhook対応
+- Docker環境での簡単デプロイ
 
 ## 🛠 Tech Stack
 
-- **Node.js + TypeScript**: メイン実装言語
-- **Google APIs**: Gmail API、Google Calendar API
-- **SQLite**: ルールと実行ログの保存
-- **Express**: Webサーバー・ダッシュボード
-- **chrono-node**: 自然言語日時パーサー
+- **Runtime**: Node.js 20 + TypeScript 5
+- **Framework**: Express.js
+- **Database**: SQLite (デフォルト) / PostgreSQL (オプション)
+- **Google APIs**: Gmail API, Google Calendar API
+- **Validation**: Zod
+- **Testing**: Vitest
+- **Date Parsing**: chrono-node
+- **Containerization**: Docker + Docker Compose
 
-## 🚀 セットアップ手順
+## 📊 Domain Model
 
-### 1. リポジトリのクローンと依存関係のインストール
+### Core Entities
+
+#### Rule
+メールからカレンダー予定への変換ルールを定義するエンティティ。
+
+- **gmailQuery**: Gmail検索クエリ (例: `label:meeting`, `subject:重要`)
+- **titleTemplate**: 予定タイトルのテンプレート (`{{subject}}` など)
+- **descriptionTemplate**: 予定説明のテンプレート
+- **timeStrategy**: 予定日時の決定方法
+  - `parse_from_body`: メール本文から日時を自動抽出
+  - `fixed_delay`: メール受信からN時間後
+  - `fixed_datetime`: 特定の日時を指定
+- **calendarId**: 対象カレンダー（通常は `primary`）
+- **isActive**: ルールの有効/無効
+
+#### ExecutionLog
+ルール実行履歴を記録するエンティティ。
+
+- **ruleId**: 実行されたルールのID
+- **gmailMessageId**: 処理対象のメールID
+- **status**: `success`, `failed`, `skipped`
+- **error**: エラー詳細（JSON）
+- **createdAt**: 実行日時
+
+### Relationships
+- `Rule` 1 --< N `ExecutionLog`
+
+## 🚀 Getting Started
+
+### Requirements
+
+- **Node.js** 20.x or later
+- **npm** or **pnpm**
+- **Google Cloud Project** with Gmail & Calendar API enabled
+- **Docker** (optional, for containerized deployment)
+
+### Setup Steps
+
+#### 1. Clone and Install
 
 ```bash
 git clone <repository-url>
@@ -31,38 +74,28 @@ cd gmail-gcal-automation-bot
 npm install
 ```
 
-### 2. Google Cloud プロジェクトの設定
+#### 2. Google Cloud Configuration
 
-#### 2.1 Google Cloud Console でプロジェクトを作成
+1. Create a project in [Google Cloud Console](https://console.cloud.google.com/)
+2. Enable APIs:
+   - [Gmail API](https://console.cloud.google.com/apis/library/gmail.googleapis.com)
+   - [Google Calendar API](https://console.cloud.google.com/apis/library/calendar-json.googleapis.com)
+3. Create OAuth 2.0 credentials:
+   - Go to [Credentials page](https://console.cloud.google.com/apis/credentials)
+   - Click "Create Credentials" → "OAuth client ID"
+   - Application type: **Web application** or **Desktop app**
+   - Add authorized redirect URI: `http://localhost:3000/oauth2callback`
+   - Save **Client ID** and **Client Secret**
 
-1. [Google Cloud Console](https://console.cloud.google.com/) にアクセス
-2. 新しいプロジェクトを作成（例: `gmail-gcal-bot`）
+#### 3. Environment Variables
 
-#### 2.2 APIを有効化
-
-以下のAPIを有効にします:
-
-1. **Gmail API**: https://console.cloud.google.com/apis/library/gmail.googleapis.com
-2. **Google Calendar API**: https://console.cloud.google.com/apis/library/calendar-json.googleapis.com
-
-#### 2.3 OAuth 2.0 認証情報の作成
-
-1. [認証情報ページ](https://console.cloud.google.com/apis/credentials) へ移動
-2. 「認証情報を作成」→「OAuth クライアント ID」を選択
-3. アプリケーションの種類: **デスクトップアプリ** または **ウェブアプリケーション**
-4. ウェブアプリケーションの場合:
-   - 承認済みのリダイレクト URI: `http://localhost:3000/oauth2callback`
-5. 作成後、**クライアントID** と **クライアントシークレット** をコピー
-
-### 3. 環境変数の設定
-
-`.env.example` を `.env` にコピーして編集:
+Copy `.env.example` to `.env` and configure:
 
 ```bash
 cp .env.example .env
 ```
 
-`.env` の内容を編集:
+Edit `.env`:
 
 ```env
 GOOGLE_CLIENT_ID=your_actual_client_id_here
@@ -74,204 +107,288 @@ PORT=3000
 GMAIL_USER_EMAIL=your_email@gmail.com
 ```
 
-### 4. データベースの初期化
+#### 4. Initialize Database
 
 ```bash
-npm run migrate
+npm run db:migrate
 ```
 
-これにより、データベーステーブルが作成され、サンプルルールが2つ追加されます。
+This creates the database schema (rules and execution_logs tables).
 
-### 5. Google アカウントの認証
-
-開発サーバーを起動:
+#### 5. Seed Demo Data
 
 ```bash
-npm run dev
+npm run db:seed
 ```
 
-ブラウザで http://localhost:3000 にアクセスし、「Authenticate with Google」をクリックして認証を完了します。
+This populates the database with 5 realistic demo rules and sample execution logs.
 
-認証が完了すると `token.json` ファイルが作成されます。
+#### 6. Authenticate with Google
 
-## 📖 使い方
-
-### 開発モード（ダッシュボード付き）
+Start the development server:
 
 ```bash
 npm run dev
 ```
 
-- http://localhost:3000 でダッシュボードにアクセス
-- ルール一覧の確認
-- 手動でルールをトリガー
+Visit http://localhost:3000 and click "Authenticate with Google" to complete OAuth flow. A `token.json` file will be created.
 
-### Cronモード（定期実行）
+## 📖 Usage
+
+### Development Mode
+
+```bash
+npm run dev
+```
+
+- Dashboard: http://localhost:3000
+- REST API: http://localhost:3000/api/*
+- View rules, trigger execution manually, check logs
+
+### Production Build
+
+```bash
+npm run build
+npm start
+```
+
+### Cron Mode (Scheduled Execution)
 
 ```bash
 npm run cron
 ```
 
-このコマンドは、すべてのアクティブなルールを実行し、結果を表示します。
+Executes all active rules once and exits. Ideal for cron jobs.
 
-**Crontabの設定例（15分ごとに実行）:**
+**Example crontab (every 15 minutes):**
+
+```cron
+*/15 * * * * cd /path/to/gmail-gcal-automation-bot && npm run cron >> logs/cron.log 2>&1
+```
+
+### Docker Deployment
 
 ```bash
-*/15 * * * * cd /path/to/gmail-gcal-automation-bot && npm run cron >> cron.log 2>&1
+# Build and start with Docker Compose
+npm run docker:up
+
+# View logs
+npm run docker:logs
+
+# Stop containers
+npm run docker:down
 ```
 
-## 📊 データベーススキーマ
+**Note**: Before running Docker, ensure `.env` is configured and `token.json` exists (authenticate locally first).
 
-### Rules テーブル
+## 🔌 API Endpoints
 
-| カラム | 型 | 説明 |
-|--------|-----|------|
-| id | INTEGER | 主キー |
-| name | TEXT | ルール名 |
-| gmailQuery | TEXT | Gmail検索クエリ (例: `label:meeting`) |
-| calendarId | TEXT | カレンダーID (通常は `primary`) |
-| titleTemplate | TEXT | イベントタイトルのテンプレート |
-| descriptionTemplate | TEXT | イベント説明のテンプレート |
-| timeStrategy | TEXT | 日時戦略（JSON） |
-| isActive | INTEGER | 有効/無効 (1/0) |
+### Rule Management
 
-### ExecutionLog テーブル
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/rules` | List all rules (query: `?active=true` for active only) |
+| GET | `/api/rules/:id` | Get specific rule |
+| POST | `/api/rules` | Create new rule |
+| PATCH | `/api/rules/:id` | Update rule |
+| DELETE | `/api/rules/:id` | Delete rule |
 
-| カラム | 型 | 説明 |
-|--------|-----|------|
-| id | INTEGER | 主キー |
-| ruleId | INTEGER | ルールID（外部キー） |
-| gmailMessageId | TEXT | GmailメッセージID |
-| status | TEXT | `success`, `failed`, `skipped` |
-| error | TEXT | エラー詳細（JSON） |
-| createdAt | TEXT | 作成日時 |
+### Execution Logs
 
-## 🔧 ルールの設定例
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/logs/rules/:ruleId` | Get logs for specific rule |
+| GET | `/api/logs/recent` | Get recent logs across all rules |
 
-### 例1: ミーティング通知から予定を作成
+### OAuth & Trigger
 
-```json
-{
-  "name": "ミーティング通知からカレンダー追加",
-  "gmailQuery": "label:meeting subject:ミーティング",
-  "calendarId": "primary",
-  "titleTemplate": "{{subject}}",
-  "descriptionTemplate": "メール本文:\n{{body}}",
-  "timeStrategy": {
-    "type": "parse_from_body",
-    "durationMinutes": 60
-  },
-  "isActive": true
-}
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/auth` | Start OAuth authentication |
+| GET | `/oauth2callback` | OAuth callback |
+| POST | `/trigger` | Manually trigger all active rules |
+
+### Example API Usage
+
+```bash
+# Create a new rule
+curl -X POST http://localhost:3000/api/rules \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Important Email Reminder",
+    "gmailQuery": "is:important",
+    "calendarId": "primary",
+    "titleTemplate": "⭐ Review: {{subject}}",
+    "descriptionTemplate": "From: {{from}}\n\n{{snippet}}",
+    "timeStrategy": {
+      "type": "fixed_delay",
+      "delayHours": 2,
+      "durationMinutes": 30
+    },
+    "isActive": true
+  }'
+
+# List all active rules
+curl http://localhost:3000/api/rules?active=true
+
+# Get execution logs for rule ID 1
+curl http://localhost:3000/api/logs/rules/1?limit=50
 ```
 
-**timeStrategy の種類:**
+## 🧪 Testing
 
-- `parse_from_body`: メール本文から日時を自動抽出（chrono-nodeを使用）
-- `fixed_delay`: メール受信から指定時間後に予定を作成
-- `fixed_datetime`: 特定の日時に予定を作成
+Run all tests:
 
-### 例2: TODOラベルのメールから3時間後にリマインダー
-
-```json
-{
-  "name": "TODOリマインダー（3時間後）",
-  "gmailQuery": "label:todo",
-  "calendarId": "primary",
-  "titleTemplate": "TODO: {{subject}}",
-  "descriptionTemplate": "タスク詳細:\n{{snippet}}",
-  "timeStrategy": {
-    "type": "fixed_delay",
-    "delayHours": 3,
-    "durationMinutes": 30
-  },
-  "isActive": true
-}
+```bash
+npm test
 ```
 
-### テンプレート変数
+Run tests in watch mode:
 
-テンプレート（titleTemplate、descriptionTemplate）で使用可能な変数:
-
-- `{{subject}}`: メールの件名
-- `{{from}}`: 送信者
-- `{{to}}`: 宛先
-- `{{snippet}}`: メールのスニペット
-- `{{body}}`: メール本文
-- `{{date}}`: 受信日時
-
-## 🔍 Gmail クエリの例
-
-```
-label:meeting                    # "meeting"ラベルのメール
-subject:重要                     # 件名に"重要"を含む
-from:boss@example.com           # 特定の送信者から
-is:unread label:todo            # 未読かつTODOラベル
-after:2024/01/01                # 特定日以降
+```bash
+npm run test:watch
 ```
 
-詳細: [Gmail検索演算子](https://support.google.com/mail/answer/7190?hl=ja)
+Tests cover:
+- Template engine (variable substitution)
+- Time parser (all 3 strategies)
+- Database CRUD operations
+- Rule execution logic
 
-## 📁 ディレクトリ構成
+## 🔍 Example Flow
+
+### Vertical Slice: Meeting Email → Calendar Event
+
+1. **Email arrives** in Gmail with label "meeting"
+2. **Rule matches**: `gmailQuery: "label:meeting"`
+3. **Engine extracts** email metadata (subject, from, body, date)
+4. **Template renders**: `titleTemplate: "{{subject}}"` → "Team Sync Meeting"
+5. **Time parser** determines event time:
+   - `parse_from_body`: Parses "tomorrow at 2pm" from body
+   - `fixed_delay`: Creates event 3 hours after email received
+6. **Calendar API** creates event with rendered title, description, time
+7. **Execution log** records success with message ID
+8. **Duplicate prevention**: Same message won't be processed again
+
+## 🔧 Development Scripts
+
+| Script | Description |
+|--------|-------------|
+| `npm run dev` | Start development server with ts-node |
+| `npm run build` | Compile TypeScript to JavaScript |
+| `npm start` | Run compiled production build |
+| `npm test` | Run tests with Vitest |
+| `npm run lint` | Lint TypeScript files |
+| `npm run lint:fix` | Lint and auto-fix issues |
+| `npm run db:migrate` | Initialize database schema |
+| `npm run db:seed` | Populate database with demo data |
+| `npm run cron` | Execute all active rules once |
+| `npm run docker:up` | Start Docker containers |
+| `npm run docker:down` | Stop Docker containers |
+| `npm run docker:logs` | View container logs |
+
+## 📁 Project Structure
 
 ```
 gmail-gcal-automation-bot/
 ├── src/
-│   ├── config/              # 設定ファイル
-│   │   ├── env.ts          # 環境変数管理
-│   │   └── googleClient.ts # Google API クライアント
-│   ├── db/                  # データベース関連
-│   │   ├── types.ts        # 型定義
-│   │   ├── database.ts     # DB操作
-│   │   └── migrate.ts      # マイグレーション
-│   ├── rules/               # ルールエンジン
-│   │   ├── ruleEngine.ts   # メインロジック
-│   │   ├── templateEngine.ts # テンプレート処理
-│   │   └── timeParser.ts   # 日時パース
-│   ├── services/            # 外部サービス連携
-│   │   ├── gmailWatcher.ts # Gmail API
-│   │   └── calendarService.ts # Calendar API
-│   ├── server.ts            # Webサーバー
-│   └── cron.ts              # Cron実行スクリプト
-├── .env                     # 環境変数（gitignore）
-├── .env.example             # 環境変数テンプレート
-├── package.json
-├── tsconfig.json
+│   ├── api/                  # REST API layer
+│   │   ├── schemas.ts        # Zod validation schemas
+│   │   ├── middleware.ts     # Error handling, validation
+│   │   ├── rules.router.ts   # Rule CRUD endpoints
+│   │   └── logs.router.ts    # Execution log endpoints
+│   ├── config/               # Configuration
+│   │   ├── env.ts            # Environment variables
+│   │   └── googleClient.ts   # Google OAuth client
+│   ├── db/                   # Database layer
+│   │   ├── types.ts          # TypeScript types
+│   │   ├── database.ts       # SQLite operations
+│   │   ├── migrate.ts        # Schema migration
+│   │   └── seed.ts           # Demo data seeding
+│   ├── rules/                # Rule engine
+│   │   ├── ruleEngine.ts     # Main execution logic
+│   │   ├── templateEngine.ts # {{variable}} substitution
+│   │   └── timeParser.ts     # Date/time parsing
+│   ├── services/             # External services
+│   │   ├── gmailWatcher.ts   # Gmail API client
+│   │   └── calendarService.ts # Calendar API client
+│   ├── server.ts             # Express server + dashboard
+│   └── cron.ts               # Cron execution script
+├── Dockerfile                # Production container
+├── docker-compose.yml        # Multi-container orchestration
+├── .env.example              # Environment template
+├── vitest.config.ts          # Test configuration
 └── README.md
 ```
 
-## 🔐 セキュリティ
+## 🔐 Security
 
-- `.env` と `token.json` は `.gitignore` に含まれているため、リポジトリにコミットされません
-- OAuth トークンは自動的にリフレッシュされます
-- Google Cloud Console でアクセス権限を適切に設定してください
+- **OAuth tokens** (`token.json`) are excluded from version control
+- **Environment variables** (`.env`) must be kept private
+- **API validation** via Zod schemas prevents malformed input
+- **Error details** are sanitized in API responses
+- **Container security**: Non-root user in Docker image
 
-## 🐛 トラブルシューティング
+## 🐛 Troubleshooting
 
-### 認証エラー
+### Authentication Issues
 
 ```bash
-# token.jsonを削除して再認証
+# Delete token and re-authenticate
 rm token.json
 npm run dev
-# ブラウザで http://localhost:3000/auth にアクセス
+# Visit http://localhost:3000/auth
 ```
 
-### メールが見つからない
+### No Emails Found
 
-- Gmail クエリが正しいか確認
-- Gmailのウェブインターフェースで同じクエリを試す
-- ラベルが正しく設定されているか確認
+- Verify Gmail query in Gmail web UI first
+- Check that labels exist and are spelled correctly
+- Ensure Gmail API has required scopes: `gmail.readonly`
 
-### カレンダー作成エラー
+### Calendar Creation Fails
 
-- Google Calendar API が有効になっているか確認
-- calendarId が正しいか確認（通常は `primary`）
+- Verify Calendar API is enabled in Google Cloud
+- Check `calendarId` (usually `primary` for main calendar)
+- Confirm OAuth token has `calendar` scope
 
-## 📝 ライセンス
+### Database Locked (SQLite)
+
+- Close any other connections to `data.db`
+- Check file permissions
+- Consider switching to PostgreSQL for concurrent access
+
+## 🚀 Future Extensions
+
+- [ ] **Push Notifications**: Use Gmail Push API (Pub/Sub) for real-time email detection
+- [ ] **Multi-user Support**: Extend to support multiple Gmail accounts
+- [ ] **Advanced Scheduling**: Support recurring event creation
+- [ ] **Webhook Integration**: Trigger external services after event creation
+- [ ] **AI-Enhanced Parsing**: Use LLMs for smarter email content extraction
+- [ ] **Web UI**: Full-featured admin dashboard (React/Vue)
+- [ ] **Rule Templates**: Marketplace of pre-built rules
+- [ ] **Analytics Dashboard**: Execution metrics and insights
+- [ ] **PostgreSQL Adapter**: Full support for PostgreSQL database
+- [ ] **Rate Limiting**: API rate limiting and quota management
+
+## 📝 License
 
 MIT
 
-## 🤝 貢献
+## 🤝 Contributing
 
-プルリクエストを歓迎します！バグ報告や機能リクエストは Issue でお願いします。
+Contributions are welcome! Please feel free to submit issues and pull requests.
+
+### Development Workflow
+
+1. Fork the repository
+2. Create feature branch: `git checkout -b feature/my-feature`
+3. Make changes and add tests
+4. Run tests: `npm test`
+5. Run linter: `npm run lint:fix`
+6. Commit with clear message
+7. Push and create pull request
+
+---
+
+**Built with ❤️ for automation enthusiasts**

@@ -75,6 +75,12 @@ export class AppDatabase {
     return rows.map(row => this.deserializeRule(row));
   }
 
+  getAllRules(): Rule[] {
+    const stmt = this.db.prepare('SELECT * FROM rules ORDER BY id');
+    const rows = stmt.all() as any[];
+    return rows.map(row => this.deserializeRule(row));
+  }
+
   updateRule(id: number, input: Partial<RuleInput>): void {
     const fields: string[] = [];
     const values: any[] = [];
@@ -147,6 +153,12 @@ export class AppDatabase {
   getExecutionLogsByRule(ruleId: number, limit: number = 100): ExecutionLog[] {
     const stmt = this.db.prepare('SELECT * FROM execution_logs WHERE ruleId = ? ORDER BY createdAt DESC LIMIT ?');
     const rows = stmt.all(ruleId, limit) as any[];
+    return rows.map(row => this.deserializeExecutionLog(row));
+  }
+
+  getRecentExecutionLogs(limit: number = 50): ExecutionLog[] {
+    const stmt = this.db.prepare('SELECT * FROM execution_logs ORDER BY createdAt DESC LIMIT ?');
+    const rows = stmt.all(limit) as any[];
     return rows.map(row => this.deserializeExecutionLog(row));
   }
 
