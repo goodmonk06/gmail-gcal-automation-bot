@@ -7,10 +7,47 @@ import { GmailWatcher } from './services/gmailWatcher';
 import { CalendarService } from './services/calendarService';
 import { createRulesRouter } from './api/rules.router';
 import { createLogsRouter } from './api/logs.router';
+import { createTemplatesRouter } from './api/templates.router';
+import { createEventsRouter } from './api/events.router';
 import { errorHandler, successResponse } from './api/middleware';
+import { getLogger } from './lib/logger';
+import { getMetricsCollector, MetricNames } from './lib/metrics';
 
+const logger = getLogger({ service: 'server' });
 const app = express();
 app.use(express.json());
+
+// Request logging middleware
+app.use((req, res, next) => {
+  const start = Date.now();
+  const requestId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+  // Add request ID to headers
+  res.setHeader('X-Request-ID', requestId);
+
+  res.on('finish', () => {
+    const duration = Date.now() - start;
+    getMetricsCollector().recordHistogram(MetricNames.HTTP_REQUEST_DURATION, duration, {
+      method: req.method,
+      path: req.path,
+      status: res.statusCode.toString(),
+    });
+    getMetricsCollector().incrementCounter(MetricNames.HTTP_REQUEST_TOTAL, 1, {
+      method: req.method,
+      status: res.statusCode.toString(),
+    });
+
+    logger.info(`${req.method} ${req.path}`, {
+      requestId,
+      method: req.method,
+      path: req.path,
+      status: res.statusCode,
+      duration,
+    });
+  });
+
+  next();
+});
 
 // Initialize
 validateConfig();
@@ -186,6 +223,28 @@ app.get('/', (req, res) => {
 // API Routes
 app.use('/api/rules', createRulesRouter(db));
 app.use('/api/logs', createLogsRouter(db));
+app.use('/api/templates', createTemplatesRouter());
+app.use('/api/events', createEventsRouter());
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.json(successResponse({
+    status: 'healthy',
+    timestamp: new Date().toISOString(),
+    authenticated: clientManager.isAuthenticated(),
+  }));
+});
+
+// Metrics endpoint (development only)
+if (process.env.NODE_ENV !== 'production') {
+  app.get('/metrics', (req, res) => {
+    const metrics = getMetricsCollector().getMetrics();
+    res.json(successResponse({
+      count: metrics.length,
+      metrics,
+    }));
+  });
+}
 
 // OAuth - Start authentication
 app.get('/auth', (req, res) => {
